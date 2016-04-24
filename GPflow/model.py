@@ -72,8 +72,9 @@ class AutoFlow:
         def runnable(instance, *np_args):
             graph_name = '_' + tf_method.__name__ + '_graph'
             if not hasattr(instance, graph_name):
+                if instance._needs_recompile:
+                    instance._compile()  # ensures free_vars is up-to-date.
                 with instance.tf_mode():
-                    instance.make_tf_array(instance._free_vars)
                     graph = tf_method(instance, *self.tf_args)
                     setattr(instance, graph_name, graph)
             feed_dict = dict(zip(self.tf_args, np_args))
