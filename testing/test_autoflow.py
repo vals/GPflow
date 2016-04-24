@@ -50,16 +50,34 @@ class TestGPmodel(unittest.TestCase):
         self.m = GPflow.svgp.SVGP(X, Y, kern=GPflow.kernels.Matern32(1), likelihood=GPflow.likelihoods.StudentT(), Z=X[::2].copy())
         self.Xtest = np.random.randn(100,1)
         self.Ytest = np.random.randn(100,1)
+
     def test_predict_f(self):
         mu, var = self.m.predict_f(self.Xtest)
+
     def test_predict_y(self):
         mu, var = self.m.predict_y(self.Xtest)
+
     def test_predict_density(self):
         d = self.m.predict_density(self.Xtest, self.Ytest)
 
-    
+
+class TestFixAndPredict(unittest.TestCase):
+    """
+    Bug #54 says that if a model parameter is fixed  between calls to predict
+    (an autoflow fn) then the second call fails. This test ensures replicates
+    that and ensures that the bugfix remains in furure.
+    """
+    def setUp(self):
+        rng = np.random.RandomState(0)
+        X, Y = rng.randn(2, 10, 1)
+        self.m = GPflow.svgp.SVGP(X, Y, kern=GPflow.kernels.Matern32(1), likelihood=GPflow.likelihoods.StudentT(), Z=X[::2].copy())
+        self.Xtest = np.random.randn(100,1)
+        self.Ytest = np.random.randn(100,1)
+    def test(self):
+        self.m._compile()
+        self.m.kern.variance.fixed = True
+        _, _ = self.m.predict_f(self.m.X)
 
 
 if __name__ == "__main__":
     unittest.main()
-
