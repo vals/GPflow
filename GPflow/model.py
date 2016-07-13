@@ -114,17 +114,28 @@ class Model(Parameterized):
             f = self.build_likelihood() + self.build_prior()
             g, = tf.gradients(f, self._free_vars)
 
-        self._minusF = tf.neg(f, name='objective')
-        self._minusG = tf.neg(g, name='grad_objective')
+        with tf.name_scope('optimize'):
+            self._minusF = tf.neg(f, name='objective')
+            self._minusG = tf.neg(g, name='grad_objective')
 
-        # The optimiser needs to be part of the computational graph, and needs
-        # to be initialised before tf.initialise_all_variables() is called.
-        if optimizer is None:
-            opt_step = None
-        else:
-            opt_step = optimizer.minimize(self._minusF,
-                                          var_list=[self._free_vars])
+            # The optimiser needs to be part of the computational graph, and needs
+            # to be initialised before tf.initialise_all_variables() is called.
+            if optimizer is None:
+                opt_step = None
+            else:
+                opt_step = optimizer.minimize(self._minusF,
+                                              var_list=[self._free_vars])
+                tf.scalar_summary(self._minusF.name, self._minusF)
+                tf.histogram_summary(self._minusG.name, self._minusG)
+
+                grad_norm = tf.sqrt(tf.reduce_sum(tf.square(self._minusG)), name='grad_norm')
+                tf.scalar_summary(grad_norm.name, grad_norm)
+
+        self._merged_summaries = tf.merge_all_summaries()
+        self._opt_writer = tf.train.SummaryWriter(self._logdir, self._session.graph)
+
         init = tf.initialize_all_variables()
+
         self._session.run(init)
 
         # build tensorflow functions for computing the likelihood
@@ -163,7 +174,7 @@ class Model(Parameterized):
                               x0=self.get_free_state(), verbose=verbose)
 
     def optimize(self, method='L-BFGS-B', tol=None, callback=None,
-                 max_iters=1000, **kw):
+                 max_iters=1000, logdir=None, **kw):
         """
         Optimize the model by maximizing the likelihood (possibly with the
         priors also) with respect to any free variables.
@@ -189,6 +200,7 @@ class Model(Parameterized):
         This method returns the results of the call to optimize.minimize, or a
         similar object in the tensorflow case.
         """
+        self._logdir = logdir
 
         if type(method) is str:
             return self._optimize_np(method, tol, callback, max_iters, **kw)
@@ -204,7 +216,8 @@ class Model(Parameterized):
         try:
             iteration = 0
             while iteration < max_iters:
-                self._session.run(opt_step, feed_dict=self.get_feed_dict())
+                s, _ = self._session.run([self._merged_summaries, opt_step], feed_dict=self.get_feed_dict())
+                self._opt_writer.add_summary(s, iteration)
                 if callback is not None:
                     callback(self._session.run(self._free_vars))
                 iteration += 1
